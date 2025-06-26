@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "string.h"
 
 #define OK 0
 #define ERROR 1
