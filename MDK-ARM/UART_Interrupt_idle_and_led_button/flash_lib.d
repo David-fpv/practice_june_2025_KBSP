@@ -1,4 +1,5 @@
 uart_interrupt_idle_and_led_button/flash_lib.o: flash_lib.c \
+  ..\MDK-ARM\flash_lib.h \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal.h \
   ..\Core\Inc\stm32f1xx_hal_conf.h \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_rcc.h \

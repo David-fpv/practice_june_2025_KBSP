@@ -23,13 +23,15 @@
 /* USER CODE BEGIN Includes */
 #include "com_packet.h"
 #include "flash_lib.h"
-#include "action_handler.h"
+#include "array_container.h"
 #include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#define TIM_CLK_HZ   72000000UL
+#define MAX_ARR      0xFFFFU
+#define MAX_PSC      0xFFFFU
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -65,35 +67,32 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define UART_MAX_BUFFER_LENGHT 50
-uint8_t uart_buffer[UART_MAX_BUFFER_LENGHT] = {0};
-uint16_t uart_buffer_lenght = 0;
-struct data_package package;
 
-void sendPackage(uint8_t status, struct data_package* package, uint8_t buffer[], uint16_t max_buffer_length)
+
+data_package package;
+array_container buffer = {
+	.length = 0,
+	.max_length=MAX_ARRAY_LENGHT
+};
+
+
+void sendPackage(uint8_t status, data_package* package, array_container* container)
 {
 	package->operation_code = status;
 	if (package->operation_code == 0x2) package->data_length = 0; // If packet about error 
-	uint16_t buffer_length = package_to_buffer(buffer, max_buffer_length, package);
-	buffer_length = add_security_symbols(buffer, buffer_length, max_buffer_length);
-	HAL_UART_Transmit(&huart1, buffer, buffer_length, 100);
+	container->length = package_to_buffer(container, package);
+	container->length = add_security_symbols(container);
+	HAL_UART_Transmit(&huart1, container->array, container->length, 100);
 }
 
-void sendErrorPackage(struct data_package* package, uint8_t buffer[], uint16_t max_buffer_length)
+
+void sendErrorPackage(data_package* package, array_container* container)
 {	
-	sendPackage(0x2, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	sendPackage(0x2, package, container);
 }
 
-uint8_t isNormalLenghtPackage(struct data_package* package, uint8_t min_normal_lenght)
-{
-	if (package->data_length < min_normal_lenght)
-	{
-		return ERROR;
-	}
-	return OK;
-}
 
-uint8_t analog_sensor(struct data_package* package)
+uint8_t analog_sensor(data_package* package, array_container* container)
 {
 	// something (analog sensor) - 1 byte - chennal ADC, 4 bytes - value
 	// In this moment it's button - digital data
@@ -109,72 +108,96 @@ uint8_t analog_sensor(struct data_package* package)
 	package->data_length = 5;
 	package->data[0] = 1;
 	memcpy(&package->data[1], &ADC_value_voltage, 4);
-	sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	sendPackage(0x0, package, container);
 	return OK;
 }
 
-uint8_t led_manage(struct data_package* package)
+
+uint8_t led_manage(data_package* package, array_container* container)
 {
 	// manage led
 	if (isNormalLenghtPackage(package, 1) == ERROR)
 	{
-		sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+		sendErrorPackage(package, container);
 		return ERROR;
 	}
 		
 	package->data[0] > 0x0 ? HAL_GPIO_WritePin(GPIOB, LED_1_Pin, GPIO_PIN_SET) : HAL_GPIO_WritePin(GPIOB, LED_1_Pin, GPIO_PIN_RESET);
 	package->data_length = 0;	
-	sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	sendPackage(0x0, package, container);
 	return OK;
 }
 
-uint8_t led_blink(struct data_package* package)
+uint8_t led_blink(data_package* package, array_container* container)
 {
-	// led blink 1 Hz - 35 kHz
-	// led PWM
-	if (isNormalLenghtPackage(package, 3) == ERROR)
-	{
-		sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
-		return ERROR;
-	}
+    if (isNormalLenghtPackage(package, 3) == ERROR) {
+        sendErrorPackage(package, container);
+        return ERROR;
+    }
+
+    uint8_t  duty     = package->data[0]; 
+    uint16_t freq_hz  = package->data[1] << 8 | package->data[2];
+    if (freq_hz == 0) freq_hz = 1;
+
+    
+    uint32_t min_psc = TIM_CLK_HZ / ((uint32_t)freq_hz * (MAX_ARR + 1));
+    if (min_psc > MAX_PSC) min_psc = MAX_PSC;
+    TIM2->PSC = (uint16_t)min_psc;
+
+    uint32_t arr = TIM_CLK_HZ / ((TIM2->PSC + 1) * (uint32_t)freq_hz) - 1;
+    if (arr > MAX_ARR) arr = MAX_ARR;
+    TIM2->ARR = (uint16_t)arr;
+
+    uint32_t ccr = ((uint32_t)duty * (arr + 1)) / 100;
+    TIM2->CCR1 = (uint16_t)ccr;
+
+    TIM2->EGR = TIM_EGR_UG;
+
 		
-	TIM2->CCR1 =  (uint8_t)((float)package->data[0] * 65535 / 100); // change PWM borehole
-		
-	package->data_length = 0;	
-	sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
-	return OK;
+    package->data_length = 0;
+    sendPackage(0x0, package, container);
+    return OK;
 }
 
-uint8_t reset(struct data_package* package)
+uint8_t reset(data_package* package, array_container* container)
 {
 	// reset
 	package->data_length = 0;	
-	sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	sendPackage(0x0, package, container);
 	HAL_NVIC_SystemReset();
 	return OK;
 }
 
-uint8_t flash_handler(struct data_package* package)
+
+uint8_t flash_handler(data_package* package, array_container* container)
 {
 	// read/write to flash
-	uint32_t address, data;
+	uint32_t address;
+	uint32_t data;
+	
 	switch (package->operation_code)
 	{
 		case 0x1:
 			if (isNormalLenghtPackage(package, 8) == ERROR)
 			{
-				sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+				sendErrorPackage(package, container);
 				return ERROR;
 			}
+			
+			//address = 0x0801F800;
 			memcpy(&address, &(package->data[0]), sizeof(uint32_t));
 			memcpy(&data, &(package->data[4]), sizeof(uint32_t));
-			if (FLASH_WriteWord(address, data) == HAL_OK)
+			address = __REV(address); //reverse address (big-endian to little-endian address)
+			
+			
+			if (writeFlash(address, data) == HAL_OK)
 			{
-				sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+				package->data_length = 0;
+				sendPackage(0x0, package, container);
 				return OK;
 			} else
 			{
-				sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+				sendErrorPackage(package, container);
 				return ERROR;
 			}
 			break;
@@ -182,70 +205,57 @@ uint8_t flash_handler(struct data_package* package)
 		case 0x2:
 			if (isNormalLenghtPackage(package, 4) == ERROR)
 			{
-				sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+				sendErrorPackage(package, container);
 				return ERROR;
 			}
+			
 			memcpy(&address, &(package->data[0]), sizeof(uint32_t));
-			data = FLASH_ReadWord(address);
-			package->data_length = 8;
+			address = __REV(address); //reverse address (big-endian to little-endian address)
+			//address = 0x0801F800;
+			data = readFlash(address);
+			
 			memcpy(&(package->data[4]), &data, sizeof(uint32_t));
-			sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+			package->data_length = 8;
+			sendPackage(0x0, package, container);
 			return OK;
-			break;
-		
-		case 0x3:
-			if (isNormalLenghtPackage(package, 4) == ERROR)
-			{
-				sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
-				return ERROR;
-			}
-			memcpy(&address, &(package->data[0]), sizeof(uint32_t));
-			if (FLASH_ErasePage(address) == HAL_OK)
-			{
-				sendPackage(0x0, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
-				return OK;
-			} else
-			{
-				sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
-				return ERROR;
-			}
 			break;
 			
 		default:
-			sendErrorPackage(package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+			sendErrorPackage(package, container);
 			return ERROR;
 	}
 }
 
-uint8_t mirror_massage_back(struct data_package* package)
+
+uint8_t mirror_massage_back(data_package* package, array_container* container)
 {
 	// Sends an unchanged message back
-	sendPackage(package->operation_code, package, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	sendPackage(package->operation_code, package, container);
 	return OK;
 }
 
 
-uint8_t execute_package(struct data_package* package)
+uint8_t execute_package(data_package* package, array_container* container)
 {
 	switch (package->object_code)
 	{
 		case 0x1:
-			return analog_sensor(package);
+			return analog_sensor(package, container);
 		
 		case 0x2:
-			return led_manage(package);
+			return led_manage(package, container);
 		
 		case 0x3:
-			return led_blink(package);
+			return led_blink(package, container);
 		
 		case 0x4:
-			return reset(package);
+			return reset(package, container);
 		
 		case 0x5:
-			return flash_handler(package);
+			return flash_handler(package, container);
 		
 		case 0x6:
-			return mirror_massage_back(package);
+			return mirror_massage_back(package, container);
 		
 		default:
 			return ERROR;
@@ -254,12 +264,12 @@ uint8_t execute_package(struct data_package* package)
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
-    uart_buffer_lenght = Size;
-		uart_buffer_lenght = remove_security_symbols(uart_buffer, uart_buffer_lenght);
-		buffer_to_package(uart_buffer, uart_buffer_lenght, &package);
-		execute_package(&package);
+  buffer.length = Size;
+	buffer.length = remove_security_symbols(&buffer);
+	buffer_to_package(&buffer, &package);
+	execute_package(&package, &buffer);
 	
-    HAL_UARTEx_ReceiveToIdle_IT(&huart1, uart_buffer, UART_MAX_BUFFER_LENGHT);
+  HAL_UARTEx_ReceiveToIdle_IT(&huart1, buffer.array, buffer.max_length);
 }
 /* USER CODE END 0 */
 
@@ -296,7 +306,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-	HAL_UARTEx_ReceiveToIdle_IT(&huart1, uart_buffer, UART_MAX_BUFFER_LENGHT);
+	HAL_UARTEx_ReceiveToIdle_IT(&huart1, buffer.array, buffer.max_length);
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 	HAL_ADCEx_Calibration_Start(&hadc1);
   /* USER CODE END 2 */

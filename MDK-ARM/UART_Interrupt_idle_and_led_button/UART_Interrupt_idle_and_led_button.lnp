@@ -22,7 +22,6 @@
 "uart_interrupt_idle_and_led_button\startup_stm32f103xb.o"
 "uart_interrupt_idle_and_led_button\com_packet.o"
 "uart_interrupt_idle_and_led_button\flash_lib.o"
-"uart_interrupt_idle_and_led_button\action_handler.o"
 --strict --scatter "UART_Interrupt_idle_and_led_button\UART_Interrupt_idle_and_led_button.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers

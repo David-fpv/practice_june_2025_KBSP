@@ -31,6 +31,6 @@ uart_interrupt_idle_and_led_button/main.o: ..\Core\Src\main.c \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_tim_ex.h \
   ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_uart.h \
   ..\MDK-ARM\com_packet.h \
-  C:\Keil_v5\ARM\ARMCLANG\Bin\..\include\string.h ..\MDK-ARM\flash_lib.h \
-  ..\MDK-ARM\action_handler.h ..\MDK-ARM\com_packet.h \
-  ..\MDK-ARM\flash_lib.h
+  C:\Keil_v5\ARM\ARMCLANG\Bin\..\include\string.h \
+  ..\MDK-ARM\array_container.h ..\MDK-ARM\flash_lib.h \
+  ..\MDK-ARM\array_container.h

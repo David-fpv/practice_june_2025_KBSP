@@ -621,9 +621,9 @@
               <FilePath>.\flash_lib.c</FilePath>
             </File>
             <File>
-              <FileName>action_handler.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\action_handler.c</FilePath>
+              <FileName>array_container.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\array_container.h</FilePath>
             </File>
           </Files>
         </Group>
